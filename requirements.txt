@@ -1,0 +1,8 @@
+llama-index
+openai
+psycopg2
+fastapi
+pytesseract
+pdf2image
+python-dotenv
+pip install pdfplumber
