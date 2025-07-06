@@ -9,25 +9,25 @@ import {UserCircle, BellSimpleRinging, Fingerprint, CreditCard } from "phosphor-
 const Settings = () => {
     const Sections  = [
         {
-            icon: <UserCircle className="w-6 h-6" weight="bold"/>,
+            icon: <UserCircle className="w-10 h-10" weight="bold"/>,
             title: 'Account Settings',
             description: 'Manage your account details.',
             action: 'Edit Profile'
         },
         {
-            icon: <BellSimpleRinging className="w-6 h-6" weight="bold"/>,
+            icon: <BellSimpleRinging className="w-10 h-10" weight="bold"/>,
             title: 'Account Settings',
             description: 'Configure email and system notifications.',
             action: 'Manage Notifications'
         },
         {
-            icon: <Fingerprint className="w-6 h-6" weight="bold"/>,
+            icon: <Fingerprint className="w-10 h-10" weight="bold"/>,
             title: 'Account Settings',
             description: 'Update password and security settings.',
             action: 'Security Settings'
         },
         {
-            icon: <CreditCard className="w-6 h-6" weight="bold"/>,
+            icon: <CreditCard className="w-10 h-10" weight="bold"/>,
             title: 'Account Settings',
             description: 'Manage subscription and payment methods.',
             action: 'View Billing'
