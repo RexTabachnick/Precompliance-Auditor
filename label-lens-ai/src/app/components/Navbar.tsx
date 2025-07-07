@@ -2,19 +2,18 @@ import React from "react";
 // import { NavLink } from "react-router-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Upload, FileText, House, Wrench, Database} from 'phosphor-react';
-import { Icon } from "lucide-react";
+import { UploadIcon, FileTextIcon, HouseIcon, WrenchIcon, DatabaseIcon} from '@phosphor-icons/react';
 
 const Navbar = () => {
 
     const pathname = usePathname();
 
     const navItems = [
-        {to: '/', icon: House, label: 'Home'},
-        {to: '/upload', icon: Upload, label: 'Upload'},
-        {to: '/database', icon: Database, label: 'Database'},
-        {to: '/reports', icon: FileText, label: 'Reports'},
-        {to: '/settings', icon: Wrench, label: 'Settings'}
+        {to: '/', icon: HouseIcon, label: 'Home'},
+        {to: '/upload', icon: UploadIcon, label: 'Upload'},
+        {to: '/database', icon: DatabaseIcon, label: 'Database'},
+        {to: '/reports', icon: FileTextIcon, label: 'Reports'},
+        {to: '/settings', icon: WrenchIcon, label: 'Settings'}
     ];
 
     return (

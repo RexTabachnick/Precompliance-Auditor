@@ -3,31 +3,31 @@
 import React from "react";
 import Layout from "../components/Layout";
 import {Button} from "@/app/components/ui/button";
-import {UserCircle, BellSimpleRinging, Fingerprint, CreditCard } from "phosphor-react";
+import {UserCircleIcon, BellSimpleRingingIcon, FingerprintIcon, CreditCardIcon } from "@phosphor-icons/react";
 
 
 const Settings = () => {
     const Sections  = [
         {
-            icon: <UserCircle className="w-10 h-10" weight="bold"/>,
+            icon: <UserCircleIcon className="w-10 h-10" weight="bold"/>,
             title: 'Account Settings',
             description: 'Manage your account details.',
             action: 'Edit Profile'
         },
         {
-            icon: <BellSimpleRinging className="w-10 h-10" weight="bold"/>,
+            icon: <BellSimpleRingingIcon className="w-10 h-10" weight="bold"/>,
             title: 'Account Settings',
             description: 'Configure email and system notifications.',
             action: 'Manage Notifications'
         },
         {
-            icon: <Fingerprint className="w-10 h-10" weight="bold"/>,
+            icon: <FingerprintIcon className="w-10 h-10" weight="bold"/>,
             title: 'Account Settings',
             description: 'Update password and security settings.',
             action: 'Security Settings'
         },
         {
-            icon: <CreditCard className="w-10 h-10" weight="bold"/>,
+            icon: <CreditCardIcon className="w-10 h-10" weight="bold"/>,
             title: 'Account Settings',
             description: 'Manage subscription and payment methods.',
             action: 'View Billing'
