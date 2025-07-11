@@ -10,14 +10,18 @@ import { usePathname } from "next/navigation";
 import {
   WarningCircleIcon,
   SecurityCameraIcon,
+  HourglassSimpleIcon,
   CheckFatIcon,
+  AsteriskIcon,
+  WarningIcon,
   XIcon,
   FileLockIcon,
   FileTextIcon,
 } from "@phosphor-icons/react";
-import { Shield } from "lucide-react";
 
 const Home =() => {
+
+  const pathname = usePathname();
    
   //Mock Data
   const complianceScore = 72;
@@ -91,7 +95,7 @@ const Home =() => {
 
   return (
     <Layout>
-      <div className="max-w-7xl mx-auto space-y-8">
+      <div className="w-full mx-auto space-y-8">
         <div className="flex justify-between items-start">
           <div>
             <h1 className="text-3xl font-bold text-slate-900 mb-2">Compliance Dashboard</h1>
@@ -146,11 +150,11 @@ const Home =() => {
           </CardContent>
         </Card>
 
-        <div className="grid md:grid-cols-2 gap-4 lg:grid-cols-4 gaps-6">
+        <div className="grid md:grid-cols-2 gap-4 lg:grid-cols-5 gaps-6">
           <Card className="bg-black border-white">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-white flex-items-center">
-                <XIcon className="w-4 h-4 mr-2"/>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-md font-medium text-white flex-items-center">
+                <XIcon className="w-7 h-7 mr-2"/>
                 Critical Issues 
               </CardTitle>
             </CardHeader>
@@ -163,38 +167,52 @@ const Home =() => {
           </Card>
 
           <Card className="bg-red-700 border-black">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-red-300 flex-items-center">
-                <XIcon className="w-4 h-4 mr-2"/>
-                Critical Issues 
+            <CardHeader className="pb-2">
+              <CardTitle className="text-md font-medium text-white flex-items-center">
+                <WarningCircleIcon className="w-7 h-7 mr-2"/>
+                High Risk Issues 
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-white">
-                {criticalIssues}
+                {highIssues}
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-red-50 border-black">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-black flex-items-center">
-                <XIcon className="w-4 h-4 mr-2"/>
-                Critical Issues 
+          <Card className="bg-orange-700 border-black">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-md font-medium text-white flex-items-center">
+                <HourglassSimpleIcon className="w-7 h-7 mr-2"/>
+                Medium Risk Issues 
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-white">
-                {criticalIssues}
+                {mediumIssues}
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-red-50 border-black">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-black flex-items-center">
-                <XIcon className="w-4 h-4 mr-2"/>
-                Critical Issues 
+          <Card className="bg-yellow-600 border-black">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-md font-medium text-white flex-items-center">
+                <AsteriskIcon className="w-7 h-7 mr-2"/>
+                Low Risk Issues 
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-white">
+                {lowIssues}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-green-600 border-black">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-md font-medium text-white flex-items-center">
+                <CheckFatIcon className="w-7 h-7 mr-2"/>
+                Resolved Issues 
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -204,6 +222,24 @@ const Home =() => {
             </CardContent>
           </Card>
         </div>
+
+        {(highIssues + criticalIssues) > 0 && (
+          <Alert className="border-red-800 bg-red-50 flex items-center justify-between p-4">
+            <div className="flex items-center gap-3">
+              <WarningIcon className="w-5 h-5 text-red-800 shrink-0" />
+              <AlertDescription className="text-lg text-red-800">
+                You have {highIssues + criticalIssues} urgent compliance issues that are ready for review.
+              </AlertDescription>
+            </div>
+            <Button
+              className="hover:bg-red-500 hover:text-white"
+              variant="destructive"
+              size="sm"
+            >
+              Review Issues
+            </Button>
+          </Alert>
+        )}
 
       </div>  
     </Layout>

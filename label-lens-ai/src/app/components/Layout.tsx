@@ -8,12 +8,13 @@ interface LayoutProps {
 
 const Layout = ({ children }: LayoutProps) => {
     return (
-        <div>
+        <div className="w-full min-h-screen">
             <Navbar />
-            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <main className="w-full px-4 sm:px-6 lg:px-12 py-8">
                 {children}
             </main>
         </div>
+        
     );
 };
 
