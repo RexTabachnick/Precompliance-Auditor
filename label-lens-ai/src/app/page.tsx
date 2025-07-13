@@ -5,6 +5,7 @@ import Layout from "@/app/components/Layout";
 import {Button} from "@/app/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle} from "@/app/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/app/components/ui/alert";
+import { Badge } from "@/app/components/ui/badge";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -240,6 +241,46 @@ const Home =() => {
             </Button>
           </Alert>
         )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <FileTextIcon className="w-7 h-7 text-slate-800"/>
+                Recent Issues
+              </div>
+              <Button variant={"outline"} size={"sm"} onClick={() => {}}>
+              View All
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {recentIssues.map((issue) =>  (
+                <div key={issue.id} className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <h4 className="font-medium text-slate-800">{issue.title}</h4>
+                      <Badge className={`text-xs ${getSeverityColor(issue.severity)}`}>
+                        {issue.severity.toUpperCase()}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center space-x-4 text-sm text-slate-600">
+                      <span>{issue.category}</span>
+                      <span>.</span>
+                      <span>{issue.product}</span>
+                      <span>.</span>
+                      <span>{issue.date}</span>
+                    </div>
+                  </div>
+                  <Button variant={"outline"} size={"sm"} onClick={() => {}}>
+                    View
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
 
       </div>  
     </Layout>
