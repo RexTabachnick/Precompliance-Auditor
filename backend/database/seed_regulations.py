@@ -1,9 +1,15 @@
 """
 Seed script to populate the database with common cosmetics regulations
 """
+
+import sys
+import os
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+
 from sqlalchemy.orm import Session
-from database.database import SessionLocal, engine
-from database.models import Base, Regulation, ProhibitedIngredient, ClaimRestriction
+from backend.database.database import SessionLocal, engine
+from backend.database.models import Base, Regulation, ProhibitedIngredient, ClaimRestriction
 from datetime import datetime
 
 def create_tables():

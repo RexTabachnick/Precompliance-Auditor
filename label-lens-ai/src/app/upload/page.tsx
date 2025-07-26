@@ -107,7 +107,7 @@ export default function UploadPage(){
                     )}
 
                     <h2 className="text-xl font-semibold">Ingredients</h2>
-                    {data.Ingredients?.length ? (
+                    {data.ingredients?.length ? (
                         <ul className="list-disc pl-6">
                             {data.ingredients.map((ing: any, i: number) => (
                                 <li key = {i}>

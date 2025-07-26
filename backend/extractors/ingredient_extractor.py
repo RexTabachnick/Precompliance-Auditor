@@ -17,6 +17,7 @@ class IngredientExtractor:
         self.client = openai.OpenAI(api_key=openai_api_key)
     
     def extract(self, document_text: str) -> List[ExtractedIngredient]:
+        print("🧪 Extracting from:\n", document_text)
         """Extract ingredients from document text using OpenAI."""
         
         prompt = f"""
@@ -62,26 +63,30 @@ class IngredientExtractor:
             return []
     
     def extract_from_ingredient_list(self, ingredient_text: str) -> List[ExtractedIngredient]:
-        """Extract ingredients from a structured ingredient list."""
-        
-        # Common patterns for ingredient lists
         patterns = [
+            r'INGREDIENTS[\s\n]+(.+)',
             r'INGREDIENTS?\s*[:]\s*(.+)',
             r'INCI\s*[:]\s*(.+)',
             r'COMPOSITION\s*[:]\s*(.+)',
         ]
-        
+
         ingredient_section = ""
         for pattern in patterns:
             match = re.search(pattern, ingredient_text, re.IGNORECASE | re.DOTALL)
             if match:
                 ingredient_section = match.group(1)
                 break
-        
+
         if not ingredient_section:
-            ingredient_section = ingredient_text
-        
+            # fallback: look for the longest line with commas (naive fallback)
+            lines = ingredient_text.splitlines()
+            for line in lines:
+                if "," in line and len(line) > 20:
+                    ingredient_section = line
+                    break
+
         return self.extract(ingredient_section)
+
     
     def validate_inci_name(self, inci_name: str) -> bool:
         """Validate INCI name format."""

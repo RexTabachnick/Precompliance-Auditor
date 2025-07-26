@@ -166,7 +166,7 @@ async def analyze_document_comprehensive(
             try:
                 print("🧪 Attempting ingredient extraction...")
                 ingredient_extractor = IngredientExtractor(openai_api_key)
-                ingredients = ingredient_extractor.extract(text_response.extracted_text)
+                ingredients = ingredient_extractor.extract_from_ingredient_list(text_response.extracted_text)
                 results["ingredients"] = [ingredient.dict() for ingredient in ingredients]
                 print(f"✅ Extracted {len(ingredients)} ingredients.")
             except Exception as e:
