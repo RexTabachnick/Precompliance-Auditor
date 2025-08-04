@@ -82,10 +82,23 @@ You are a U.S. cosmetics regulatory expert. Only consider law excerpts in the ca
   "confidence": float between 0 and 1,
   "compliance_score": integer between 0 and 100
 }}
+
+DO NOT include any text outside the JSON block.
 """
+    print("Prompt sent to LLM: ", prompt)
+
+    nodes = retriever.retrieve(prompt)
+    print(f"📊 Retrieved {len(nodes)} law chunks")
+    for i, node in enumerate(nodes):
+        print(f"📄 Chunk {i+1} preview:\n{node.text[:200]}...\n")
+
     raw = query_engine.query(prompt)
     # convert to string and pull out JSON
-    return extract_json(str(raw))
+    cleaned = str(raw).strip()
+    cleaned = cleaned.replace("```json", "").replace("```","").strip()
+    print(f"Raw response cleaned:\n{cleaned[:300]}...\n")
+
+    return extract_json(cleaned)
 
 
 def main():

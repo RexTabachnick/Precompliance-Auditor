@@ -1,3 +1,5 @@
+import re
+import sys
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List
@@ -9,9 +11,11 @@ from backend.extractors.ingredient_extractor import IngredientExtractor
 from backend.extractors.claim_extractor import ClaimExtractor
 import pdfplumber
 import pytesseract
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter
 import docx
 import traceback
+import json
+import subprocess
 
 router = APIRouter(prefix="/api/extract", tags=["extraction"])
 
@@ -74,7 +78,7 @@ async def extract_text_from_file(
 @router.post("/ingredients")
 async def extract_ingredients(
     request: TextExtractionRequest,
-    db: Session = Depends(get_db)
+    # db: Session = Depends(get_db)
 ):
     """
     Extract ingredients from text using AI.
@@ -103,7 +107,7 @@ async def extract_ingredients(
 @router.post("/claims")
 async def extract_claims(
     request: TextExtractionRequest,
-    db: Session = Depends(get_db)
+    # db: Session = Depends(get_db)
 ):
     """
     Extract marketing claims from text using AI.
@@ -133,7 +137,7 @@ async def extract_claims(
 async def analyze_document_comprehensive(
     file: UploadFile = File(...),
     jurisdiction: str = "US",
-    db: Session = Depends(get_db)
+    # db: Session = Depends(get_db)
 ):
     """
     Comprehensive document analysis - extract text, ingredients, claims, and analyze compliance.
@@ -173,30 +177,44 @@ async def analyze_document_comprehensive(
                 print(f"❌ Ingredient extraction failed: {e}")
                 traceback.print_exc()
         
-        # Extract claims if document contains marketing content
-        if any(keyword in text_response.extracted_text.lower() for keyword in ["benefit", "claim", "effective", "proven"]):
-            claim_extractor = ClaimExtractor(openai_api_key)
-            claims = claim_extractor.extract(text_response.extracted_text)
-            results["claims"] = [claim.dict() for claim in claims]
+        claim_extractor = ClaimExtractor(openai_api_key)
+        claims = claim_extractor.extract(text_response.extracted_text)
+        results["claims"] = [claim.dict() for claim in claims]
+        print(f"✅ Extracted {len(claims)} claims.")
         
         # Perform compliance analysis if we have extracted data
         if results["ingredients"] or results["claims"]:
-            from backend.agents.compliance_agent import ComplianceAgent
-            from backend.extractors.ingredient_extractor import ExtractedIngredient
-            from backend.extractors.claim_extractor import ExtractedClaim
-            
-            compliance_agent = ComplianceAgent(openai_api_key, db)
-            
-            ingredients = [ExtractedIngredient(**ing) for ing in results["ingredients"]]
-            claims = [ExtractedClaim(**claim) for claim in results["claims"]]
-            
-            compliance_analysis = compliance_agent.analyze_product_compliance(
-                ingredients=ingredients,
-                claims=claims,
-                jurisdiction=jurisdiction
-            )
-            
-            results["compliance_analysis"] = compliance_analysis
+            ingredient_names = [ing["ingredient_name"] for ing in results["ingredients"]]
+
+            with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as f:
+                ingredients_path = f.name
+                json.dump(ingredient_names, f)
+
+            try:
+                print("Running check_compliance.py...")
+                proc = subprocess.run(
+                    [sys.executable, "backend/check_compliance.py", ingredients_path],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+
+                if proc.returncode != 0:
+                    print(f"Compliance Script Failed: \n{proc.stderr}")
+                    results["compliance_analysis"] = {
+                        "error": "Compliance check failed",
+                        "details": proc.stderr
+                    }
+                else:
+                    compliance_blocks = re.findall(r"\{.*?\}", proc.stdout, re.DOTALL)
+                    compliance_data = [json.loads(block) for block in compliance_blocks]
+                    results["compliance_analysis"] = compliance_data
+                    print(f"Parse {len(compliance_data)} compliance results.")
+            except Exception as e:
+                print(f"Error running compliance script: {e}")
+                results["compliance_analysis"] = {"error": str(e)}
+            finally:
+                os.unlink(ingredients_path)
         
         return results
         
@@ -235,6 +253,18 @@ def extract_text_from_pdf(file_path: str) -> str:
 
     return text if text.strip() else "[No text could be extracted]"
 
+def preprocess_image(image: Image.Image) -> Image.Image:
+    image = image.convert("L")
+
+    enhancer = ImageEnhance.Contrast(image)
+    image = enhancer.enhance(2.0)
+
+    if image.size[0] < 1000:
+        image = image.resize((image.size[0]*2, image.size[1]*2), Image.LANCZOS)
+    
+    image = image.filter(ImageFilter.SHARPEN)
+
+    return image
 
 def extract_text_from_image(file_path: str) -> str:
     try:
@@ -242,10 +272,16 @@ def extract_text_from_image(file_path: str) -> str:
         image = Image.open(file_path)
         print(f"🧠 Image mode: {image.mode}, size: {image.size}, format: {image.format}")
 
+        png_path = file_path.replace(".webp", ".png")
+        image.save(png_path, format="PNG")
+        image = preprocess_image(Image.open(png_path))
+
         if image.mode in ("P", "1"):
             image = image.convert("RGB")
+        
+        custom_config = r'--oem 3 --psm 6'
 
-        text = pytesseract.image_to_string(image)
+        text = pytesseract.image_to_string(image, lang='eng', config=custom_config)
         print(f"📝 OCR output: {text[:100]}...")
         return text if text.strip() else "[No text extracted by OCR]"
     except Exception as e:
