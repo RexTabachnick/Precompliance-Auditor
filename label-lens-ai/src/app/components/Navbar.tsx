@@ -10,7 +10,7 @@ const Navbar = () => {
 
     const navItems = [
         {to: '/', icon: HouseIcon, label: 'Home'},
-        {to: '/upload', icon: UploadIcon, label: 'Upload'},
+        {to: '/upload', icon: UploadIcon, label: 'Generate'},
         {to: '/database', icon: DatabaseIcon, label: 'Database'},
         {to: '/reports', icon: FileTextIcon, label: 'Reports'},
         {to: '/settings', icon: WrenchIcon, label: 'Settings'}

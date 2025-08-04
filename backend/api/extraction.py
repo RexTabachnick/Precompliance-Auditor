@@ -177,10 +177,13 @@ async def analyze_document_comprehensive(
                 print(f"❌ Ingredient extraction failed: {e}")
                 traceback.print_exc()
         
-        claim_extractor = ClaimExtractor(openai_api_key)
-        claims = claim_extractor.extract(text_response.extracted_text)
-        results["claims"] = [claim.dict() for claim in claims]
-        print(f"✅ Extracted {len(claims)} claims.")
+        if document_type != "ingredient_list":
+            claim_extractor = ClaimExtractor(openai_api_key)
+            claims = claim_extractor.extract(text_response.extracted_text)
+            results["claims"] = [claim.dict() for claim in claims]
+            print(f"✅ Extracted {len(claims)} claims.")
+        else:
+            print("Skipping claim extraction for ingredient list.")
         
         # Perform compliance analysis if we have extracted data
         if results["ingredients"] or results["claims"]:

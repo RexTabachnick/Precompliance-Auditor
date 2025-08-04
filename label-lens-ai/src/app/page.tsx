@@ -102,7 +102,9 @@ const Home =() => {
             <h1 className="text-3xl font-bold text-slate-900 mb-2">Compliance Dashboard</h1>
             <p className="text-lg text-slate-600">Monitor you Compliance with your all inclusive Dashboard</p>
           </div>
-          <Button className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 mt-4 rounded-lg">New Analysis</Button>
+          <Link href= "/upload">
+            <Button className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 mt-4 rounded-lg">New Analysis</Button>
+          </Link>
         </div>
 
         <Card className={`${getBgColor(complianceScore)} border-2`}>
