@@ -188,10 +188,13 @@ async def analyze_document_comprehensive(
         # Perform compliance analysis if we have extracted data
         if results["ingredients"] or results["claims"]:
             ingredient_names = [ing["ingredient_name"] for ing in results["ingredients"]]
+            
+            print("📝 Compliance input JSON:")
+            print(json.dumps({"ingredients": ingredient_names}, indent=2))
 
             with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as f:
                 ingredients_path = f.name
-                json.dump(ingredient_names, f)
+                json.dump({"ingredients": ingredient_names}, f)
 
             try:
                 print("Running check_compliance.py...")
@@ -202,6 +205,9 @@ async def analyze_document_comprehensive(
                     text=True
                 )
 
+                print("Compliance stdout:")
+                print(proc.stdout)
+
                 if proc.returncode != 0:
                     print(f"Compliance Script Failed: \n{proc.stderr}")
                     results["compliance_analysis"] = {
@@ -209,9 +215,27 @@ async def analyze_document_comprehensive(
                         "details": proc.stderr
                     }
                 else:
-                    compliance_blocks = re.findall(r"\{.*?\}", proc.stdout, re.DOTALL)
-                    compliance_data = [json.loads(block) for block in compliance_blocks]
-                    results["compliance_analysis"] = compliance_data
+                    try:
+                        json_lines = proc.stdout.strip().splitlines()
+                        last_line = json_lines[-1].strip()
+
+                        # Print debug info
+                        print("📤 Compliance script last line:")
+                        print(last_line)
+
+                        # Try parsing just the last line
+                        compliance_data = json.loads(last_line)
+                        results["compliance_analysis"] = compliance_data.get("non_compliant", [])
+                        print(f"✅ Parsed {len(results['compliance_analysis'])} compliance results.")
+
+                    except (json.JSONDecodeError, IndexError) as e:
+                        print("❌ Failed to parse JSON:", e)
+                        print("⚠️ Full stdout:")
+                        print(proc.stdout)
+                        results["compliance_analysis"] = {
+                            "error": "Could not parse compliance output",
+                            "raw_output": proc.stdout
+                        }
                     print(f"Parse {len(compliance_data)} compliance results.")
             except Exception as e:
                 print(f"Error running compliance script: {e}")

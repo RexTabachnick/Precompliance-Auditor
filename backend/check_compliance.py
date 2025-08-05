@@ -1,134 +1,353 @@
 #!/usr/bin/env python3
+"""
+Simple compliance checker that works directly with the database,
+bypassing LlamaIndex vector store issues.
+"""
 
 import sys
 import os
 import json
 import re
+from typing import List, Dict, Tuple
 
-# allow imports from project root
+# allow imports from project root  
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from dotenv import load_dotenv
-from llama_index.core import VectorStoreIndex, Settings
-from llama_index.vector_stores.postgres import PGVectorStore
-from llama_index.llms.openai import OpenAI
-from llama_index.embeddings.openai import OpenAIEmbedding
-from llama_index.core.query_engine import RetrieverQueryEngine
-from llama_index.core.retrievers import VectorIndexRetriever
+import psycopg2
+from openai import OpenAI
 
+# ───────────────────────────  SETUP  ────────────────────────────
 
-def setup_index() -> VectorStoreIndex:
+def get_db_connection():
+    """Get database connection."""
     load_dotenv()
-    Settings.llm = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    Settings.embed_model = OpenAIEmbedding(
-        model="text-embedding-3-small",
-        api_key=os.getenv("OPENAI_API_KEY")
-    )
-    pgvector_store = PGVectorStore.from_params(
-        host=os.getenv("PG_HOST", "localhost"),
+    return psycopg2.connect(
+        host=os.getenv("PG_HOST"),
         port=int(os.getenv("PG_PORT", 5432)),
-        database=os.getenv("PG_DB", "postgres"),
-        user=os.getenv("PG_USER", "postgres"),
-        password=os.getenv("PG_PASSWORD", "ragpass"),
-        table_name="law_chunks",
-        embed_dim=1536
+        dbname=os.getenv("PG_DB"),
+        user=os.getenv("PG_USER"),
+        password=os.getenv("PG_PASSWORD"),
+        sslmode="require"
     )
-    return VectorStoreIndex.from_vector_store(pgvector_store)
 
+def get_openai_client():
+    """Get OpenAI client."""
+    load_dotenv()
+    return OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def extract_json(text: str) -> dict:
+def embed_query(client: OpenAI, query: str) -> List[float]:
+    """Create embedding for query."""
+    resp = client.embeddings.create(
+        model="text-embedding-3-small",
+        input=query,
+    )
+    return resp.data[0].embedding
+
+def cosine_similarity_sql(embedding: List[float]) -> str:
+    """Generate SQL for cosine similarity."""
+    embedding_str = "[" + ",".join(map(str, embedding)) + "]"
+    return f"1 - (embedding <=> '{embedding_str}')"
+
+# ────────────────────────  DIRECT RETRIEVAL  ─────────────────────
+
+def retrieve_relevant_chunks(
+    conn, 
+    client: OpenAI, 
+    query: str, 
+    category: str = None, 
+    limit: int = 10
+) -> List[Tuple]:
     """
-    Try to load the text as JSON; if that fails, pull out the first {...} block.
+    Retrieve relevant chunks using direct database query with cosine similarity.
     """
+    print(f"    Query: '{query}' (category: {category})")
+    
+    try:
+        # Create query embedding
+        query_embedding = embed_query(client, query)
+        
+        # Build SQL query
+        similarity_expr = cosine_similarity_sql(query_embedding)
+        
+        base_query = f"""
+            SELECT 
+                text,
+                metadata,
+                document_id,
+                {similarity_expr} as similarity
+            FROM law_chunks 
+            WHERE embedding IS NOT NULL
+        """
+        
+        params = []
+        
+        # Add category filter if specified
+        if category:
+            base_query += " AND metadata->>'category' = %s"
+            params.append(category)
+        
+        # Add similarity threshold and ordering
+        base_query += f"""
+            AND {similarity_expr} > 0.3
+            ORDER BY similarity DESC
+            LIMIT %s
+        """
+        params.append(limit)
+        
+        with conn.cursor() as cur:
+            cur.execute(base_query, params)
+            results = cur.fetchall()
+            
+            print(f"    Found {len(results)} chunks")
+            
+            # Show top result if any
+            if results:
+                top_result = results[0]
+                text_preview = top_result[0][:100].replace('\n', ' ')
+                similarity = top_result[3]
+                print(f"    Best match (similarity: {similarity:.3f}): {text_preview}...")
+            
+            return results
+            
+    except Exception as e:
+        print(f"    Retrieval failed: {e}")
+        return []
+
+def extract_json_from_response(text: str) -> Dict:
+    """Extract JSON from LLM response."""
     text = text.strip()
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        m = re.search(r"\{.*\}", text, flags=re.DOTALL)
-        if not m:
-            raise ValueError("No JSON object found in LLM response")
-        return json.loads(m.group(0))
+        # Try to find JSON block
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                pass
+        
+        # Return default structure
+        return {
+            "law": "Unknown",
+            "compliant": True,
+            "issues": [],
+            "fixes": [],
+            "confidence": 0.0,
+            "compliance_score": 50
+        }
 
+# ────────────────────────  COMPLIANCE CHECK  ─────────────────────
 
-def check_compliance(
-    index: VectorStoreIndex,
-    ingredients: list[str],
+def check_single_law_direct(
+    conn,
+    client: OpenAI,
+    ingredients: List[str],
     law_category: str,
-    law_name: str
-) -> dict:
-    client_data = "Ingredients: " + ", ".join(ingredients)
+    law_name: str,
+) -> Dict:
+    """
+    Check compliance against a single law using direct database queries.
+    """
+    print(f"\n Checking {law_name} (category: {law_category})")
+    
+    # Create targeted queries
+    queries = [
+        f"{law_category} " + " ".join(ingredients),
+        f"{law_category} prohibited substances",
+        f"{law_category} banned ingredients",
+        # Test specific dangerous ingredients
+        *[f"{law_category} {ingredient}" for ingredient in ingredients 
+          if ingredient.lower() in ['benzene', 'formaldehyde', 'lead', 'mercury', 'arsenic', 'toluene']],
+    ]
+    
+    # Collect all relevant chunks
+    all_chunks = []
+    seen_doc_ids = set()
+    
+    for query in queries[:4]:  # Limit queries to avoid rate limits
+        chunks = retrieve_relevant_chunks(conn, client, query, law_category, limit=5)
+        
+        for chunk_data in chunks:
+            doc_id = chunk_data[2]  # document_id
+            if doc_id not in seen_doc_ids:
+                all_chunks.append(chunk_data)
+                seen_doc_ids.add(doc_id)
+                
+                if len(all_chunks) >= 8:  # Limit total chunks
+                    break
+        
+        if len(all_chunks) >= 8:
+            break
+    
+    print(f"    Total unique chunks: {len(all_chunks)}")
+    
+    if not all_chunks:
+        print(f"     No relevant chunks found for {law_name}")
+        return {
+            "law": law_name,
+            "compliant": True,
+            "issues": [],
+            "fixes": [],
+            "confidence": 0.1,
+            "compliance_score": 50,
+            "note": "No relevant regulatory content found"
+        }
+    
+    # Build context from chunks
+    context_parts = []
+    for i, (text, metadata, doc_id, similarity) in enumerate(all_chunks):
+        context_parts.append(f"--- REGULATORY EXCERPT {i+1} (similarity: {similarity:.3f}) ---\n{text}\n")
+    
+    context = "\n".join(context_parts)
+    ingredient_list = ", ".join(ingredients)
+    
+    # Create prompt for LLM analysis
+    prompt = f"""You are a regulatory compliance expert analyzing cosmetic ingredients against {law_name}.
 
-    retriever = VectorIndexRetriever(
-        index=index,
-        similarity_top_k=5
-    )
-    query_engine = RetrieverQueryEngine(retriever=retriever)
+REGULATORY CONTEXT:
+{context}
 
-    prompt = f"""
-You are a U.S. cosmetics regulatory expert. Only consider law excerpts in the category "{law_category}". Review the law chunks and client data below, and return _only_ valid JSON:
+INGREDIENTS TO ANALYZE:
+{ingredient_list}
 
---- LAW: {law_name} ---
-(Using real excerpts from the database, filtered by category "{law_category}")
+INSTRUCTIONS:
+1. Review each ingredient against the regulatory excerpts above
+2. Look for explicit prohibitions, restrictions, concentration limits, or labeling requirements  
+3. Consider chemical synonyms and alternate names
+4. Only flag violations where there's clear regulatory support
+5. If no relevant restrictions are found, assume compliance
 
---- CLIENT DATA ---
-    {client_data}
-
---- OUTPUT FORMAT (JSON) ---
+Return ONLY a JSON object:
 {{
   "law": "{law_name}",
   "compliant": true or false,
-  "issues": ["list specific issues if any"],
-  "fixes": ["list concrete fixes if any"],
-  "confidence": float between 0 and 1,
-  "compliance_score": integer between 0 and 100
+  "issues": ["specific issue 1", "specific issue 2"],
+  "fixes": ["specific fix 1", "specific fix 2"],
+  "confidence": 0.0 to 1.0,
+  "compliance_score": 0 to 100
 }}
 
-DO NOT include any text outside the JSON block.
+Be specific and reference actual regulatory requirements when possible.
 """
-    print("Prompt sent to LLM: ", prompt)
+    
+    # Get LLM analysis
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_tokens=1000
+        )
+        
+        response_text = response.choices[0].message.content
+        print(f"    LLM Response: {response_text[:150]}...")
+        
+        result = extract_json_from_response(response_text)
+        return result
+        
+    except Exception as e:
+        print(f"    LLM analysis failed: {e}")
+        return {
+            "law": law_name,
+            "compliant": True,
+            "issues": [],
+            "fixes": [],
+            "confidence": 0.0,
+            "compliance_score": 0,
+            "error": str(e)
+        }
 
-    nodes = retriever.retrieve(prompt)
-    print(f"📊 Retrieved {len(nodes)} law chunks")
-    for i, node in enumerate(nodes):
-        print(f"📄 Chunk {i+1} preview:\n{node.text[:200]}...\n")
-
-    raw = query_engine.query(prompt)
-    # convert to string and pull out JSON
-    cleaned = str(raw).strip()
-    cleaned = cleaned.replace("```json", "").replace("```","").strip()
-    print(f"Raw response cleaned:\n{cleaned[:300]}...\n")
-
-    return extract_json(cleaned)
-
-
-def main():
-    index = setup_index()
-    ingredients_list = ["water", "benzene", "fragrance"]
-    law_sets = [
-        {"category": "prop65",    "name": "California Prop 65"},
+def evaluate_product_direct(ingredients: List[str]) -> Dict:
+    """
+    Run compliance checks using direct database access.
+    """
+    print(f" EVALUATING INGREDIENTS: {', '.join(ingredients)}")
+    
+    try:
+        conn = get_db_connection()
+        client = get_openai_client()
+        print(" Connected to database and OpenAI")
+    except Exception as e:
+        print(f" Setup failed: {e}")
+        return {"non_compliant": [{"law": "System Error", "reason": f"Setup failed: {e}"}]}
+    
+    # Define law frameworks
+    law_frameworks = [
+        {"category": "prop65", "name": "California Prop 65"},
+        {"category": "mocra", "name": "MoCRA 2022"},
         {"category": "cosmetics", "name": "Federal Cosmetics Act"},
-        # add more as needed...
+        {"category": "color_additives", "name": "FDA Color Additive Regulations"},
+        {"category": "ftc_health", "name": "FTC Health Product Guidelines"},
     ]
-
-    results = []
-    for law in law_sets:
-        print(f"\n=== Checking: {law['name']} ===")
+    
+    non_compliant_results = []
+    
+    for law in law_frameworks:
         try:
-            res = check_compliance(
-                index=index,
-                ingredients=ingredients_list,
-                law_category=law["category"],
-                law_name=law["name"]
+            result = check_single_law_direct(
+                conn, client, ingredients, 
+                law["category"], law["name"]
             )
-            print(json.dumps(res, indent=2))
-            results.append(res)
+            
+            if not result.get("compliant", True):
+                issues = result.get("issues", [])
+                reason = "; ".join(issues) if issues else "Regulatory violation detected"
+                
+                non_compliant_results.append({
+                    "law": law["name"],
+                    "reason": reason,
+                    "confidence": result.get("confidence", 0.0)
+                })
+                
         except Exception as e:
-            print(f"Error parsing response for {law['name']}: {e}")
+            print(f" Error checking {law['name']}: {e}")
+            non_compliant_results.append({
+                "law": law["name"],
+                "reason": f"Analysis error: {e}"
+            })
+    
+    conn.close()
+    
+    # Summary
+    print(f"\n COMPLIANCE SUMMARY:")
+    print(f"   Non-compliant: {len(non_compliant_results)}")
+    print(f"   Compliant: {len(law_frameworks) - len(non_compliant_results)}")
+    
+    return {"non_compliant": non_compliant_results}
 
-    if results:
-        avg = sum(r.get("compliance_score", 0) for r in results) / len(results)
-        print(f"\nOverall average compliance score: {avg:.1f}/100")
+# ───────────────────────────  CLI ENTRY  ─────────────────────────
 
+def main() -> None:
+    if len(sys.argv) < 2:
+        print("Usage: python3 simple_compliance.py '{\"ingredients\": [\"benzene\"]}'", file=sys.stderr)
+        sys.exit(1)
+    
+    arg = sys.argv[1]
+
+    if arg.endswith(".json") and os.path.isfile(arg):
+        with open(arg, "r") as f:
+            payload = json.load(f)
+    
+    else:
+        try:
+            payload = json.loads(sys.argv[1])
+        except json.JSONDecodeError:
+            print("Input must be valid JSON or path to JSON file", file=sys.stderr)
+            sys.exit(1)
+
+    if isinstance(payload, list):
+        ingredients = payload
+    elif isinstance(payload, dict) and "ingredients" in payload:
+        ingredients = payload["ingredients"]
+    else:
+        print("JSON must be a list or an object with an 'ingredients' field", file=sys.stderr)
+        sys.exit(1)
+
+    result = evaluate_product_direct(ingredients)
+    # print(f"\n FINAL RESULT:")
+    print(json.dumps(result))
 
 if __name__ == "__main__":
     main()

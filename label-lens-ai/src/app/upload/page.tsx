@@ -145,6 +145,29 @@ export default function UploadPage(){
                         <p className="text-slate-600 italic">No ingredients found.</p>
                         )}
                     </section>
+
+                    <section>
+                        <h2 className="text-2xl font-semibold mb-2">Compliance</h2>
+                        {Array.isArray(data.compliance_analysis) && data.compliance_analysis.length > 0 ? (
+                            <ul className="space-y-4">
+                                {data.compliance_analysis.map((result: any, i: number) => (
+                                    <li key={i} className={`p-4 rounded border-l-4 shadow-sm ${
+                                        result.confidence >= 0.8 ? 'border-green-600 bg-green-50' :
+                                        result.confidence >= 0.5 ? 'border-yellow-600 bg-yellow-50' :
+                                        'border-red-600 bg-red-50'
+                                    }`}>
+                                        <h3 className="font-bold text-lg">{result.law}</h3>
+                                        <p className="text-sm">
+                                            <strong>Confidence:</strong> {(result.confidence * 100).toFixed(1)}%<br/>
+                                            <strong>Reason:</strong> {result.reason}
+                                        </p>
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : (
+                            <p className="text-slate-600 italic">No compliance issues detected.</p>
+                        )}
+                    </section>
                     </div>
                 )}
                 </div>
