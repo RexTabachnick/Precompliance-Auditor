@@ -5,6 +5,8 @@ bypassing LlamaIndex vector store issues.
 """
 
 import sys
+sys.stdout.reconfigure(encoding='utf-8')
+
 import os
 import json
 import re
@@ -116,27 +118,41 @@ def retrieve_relevant_chunks(
 
 def extract_json_from_response(text: str) -> Dict:
     """Extract JSON from LLM response."""
+    if not text:
+        raise ValueError("No response text to parse.")
+    
     text = text.strip()
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         # Try to find JSON block
-        match = re.search(r'\{.*\}', text, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group(0))
-            except json.JSONDecodeError:
-                pass
+        print("❌ JSON parsing failed.")
+        print("Offending response:\n", text)
+        raise  # So you catch it in dev
+
+        # match = re.search(r'\{.*\}', text, re.DOTALL)
+        # if match:
+        #     try:
+        #         return json.loads(match.group(0))
+        #     except json.JSONDecodeError:
+        #         pass
         
-        # Return default structure
-        return {
-            "law": "Unknown",
-            "compliant": True,
-            "issues": [],
-            "fixes": [],
-            "confidence": 0.0,
-            "compliance_score": 50
-        }
+        # # Return default structure
+        # return {
+        #     "law": "Unknown",
+        #     "compliant": True,
+        #     "issues": [],
+        #     "fixes": [],
+        #     "confidence": 0.0,
+        #     "compliance_score": 50
+        # }
+
+#Hallucinating Fix
+def is_likely_ingredient_issue(text: str) -> bool:
+    ingredient_keywords = ["ingredient", "listed in", "concentration", "formulation", "chemical", "compound"]
+    chemical_pattern = r"\b([A-Z][a-z]?[a-z]?\s?[A-Za-z0-9()\-,]*)\b"
+
+    return any(kw in text.lower() for kw in ingredient_keywords) or re.search(chemical_pattern, text)
 
 # ────────────────────────  COMPLIANCE CHECK  ─────────────────────
 
@@ -144,6 +160,7 @@ def check_single_law_direct(
     conn,
     client: OpenAI,
     ingredients: List[str],
+    claims: List[str],
     law_category: str,
     law_name: str,
 ) -> Dict:
@@ -152,15 +169,33 @@ def check_single_law_direct(
     """
     print(f"\n Checking {law_name} (category: {law_category})")
     
+    claim_queries = []
+    if claims:
+        claims_text = "; ".join(claims)
+        claim_queries = [
+            f"{law_category} claims: {claims_text}",
+            f"{law_category} marketing language: {claims_text}",
+            f"{law_category} prohibitied claims",
+        ]
+
     # Create targeted queries
-    queries = [
-        f"{law_category} " + " ".join(ingredients),
-        f"{law_category} prohibited substances",
-        f"{law_category} banned ingredients",
-        # Test specific dangerous ingredients
-        *[f"{law_category} {ingredient}" for ingredient in ingredients 
-          if ingredient.lower() in ['benzene', 'formaldehyde', 'lead', 'mercury', 'arsenic', 'toluene']],
-    ]
+    if not ingredients:
+        queries = [
+            f"{law_category} prohibited claims",
+            f"{law_category} false advertising",
+            f"{law_category} labeling violations",
+            *claim_queries
+        ]
+    else:
+        queries = [
+            f"{law_category} " + " ".join(ingredients),
+            f"{law_category} prohibited substances",
+            f"{law_category} banned ingredients",
+            # Test specific dangerous ingredients
+            *[f"{law_category} {ingredient}" for ingredient in ingredients 
+            if ingredient.lower() in ['benzene', 'formaldehyde', 'lead', 'mercury', 'arsenic', 'toluene']],
+            *claim_queries
+        ]
     
     # Collect all relevant chunks
     all_chunks = []
@@ -202,35 +237,66 @@ def check_single_law_direct(
     
     context = "\n".join(context_parts)
     ingredient_list = ", ".join(ingredients)
+    claims_text = "; ".join(claims)
+
+    if not ingredients:
+        prompt = f"""You are a regulatory compliance expert analyzing **marketing claims** against {law_name}.
+
+    REGULATORY CONTEXT:
+    {context}
+
+    CLAIMS TO ANALYZE:
+    {claims_text}
+
+    INSTRUCTIONS:
+    1. Identify marketing claims that violate {law_name}
+    2. Look for misleading language, unsubstantiated effects, or restricted phrasing
+    3. Flag any health-related claims that imply physiological changes without FDA approval
+    4. Only report actual violations backed by excerpts
+    5. Ignore ingredients entirely
+
+    Return ONLY a JSON object:
+    {{
+    "law": "{law_name}",
+    "compliant": true or false,
+    "issues": ["specific issue 1", "specific issue 2"],
+    "fixes": ["specific fix 1", "specific fix 2"],
+    "confidence": 0.0 to 1.0,
+    "compliance_score": 0 to 100
+    }}
+
+    Be specific and reference actual regulatory requirements when possible.
+    """
     
+    else:
     # Create prompt for LLM analysis
-    prompt = f"""You are a regulatory compliance expert analyzing cosmetic ingredients against {law_name}.
+        prompt = f"""You are a regulatory compliance expert analyzing cosmetic ingredients against {law_name}.
 
-REGULATORY CONTEXT:
-{context}
+    REGULATORY CONTEXT:
+    {context}
 
-INGREDIENTS TO ANALYZE:
-{ingredient_list}
+    INGREDIENTS TO ANALYZE:
+    {ingredient_list}
 
-INSTRUCTIONS:
-1. Review each ingredient against the regulatory excerpts above
-2. Look for explicit prohibitions, restrictions, concentration limits, or labeling requirements  
-3. Consider chemical synonyms and alternate names
-4. Only flag violations where there's clear regulatory support
-5. If no relevant restrictions are found, assume compliance
+    INSTRUCTIONS:
+    1. Review each ingredient against the regulatory excerpts above
+    2. Look for explicit prohibitions, restrictions, concentration limits, or labeling requirements  
+    3. Consider chemical synonyms and alternate names
+    4. Only flag violations where there's clear regulatory support
+    5. If no relevant restrictions are found, assume compliance
 
-Return ONLY a JSON object:
-{{
-  "law": "{law_name}",
-  "compliant": true or false,
-  "issues": ["specific issue 1", "specific issue 2"],
-  "fixes": ["specific fix 1", "specific fix 2"],
-  "confidence": 0.0 to 1.0,
-  "compliance_score": 0 to 100
-}}
+    Return ONLY a JSON object:
+    {{
+    "law": "{law_name}",
+    "compliant": true or false,
+    "issues": ["specific issue 1", "specific issue 2"],
+    "fixes": ["specific fix 1", "specific fix 2"],
+    "confidence": 0.0 to 1.0,
+    "compliance_score": 0 to 100
+    }}
 
-Be specific and reference actual regulatory requirements when possible.
-"""
+    Be specific and reference actual regulatory requirements when possible.
+    """
     
     # Get LLM analysis
     try:
@@ -240,11 +306,41 @@ Be specific and reference actual regulatory requirements when possible.
             temperature=0.1,
             max_tokens=1000
         )
+
+        print("\nFull LLM response text:\n", response.choices[0].message.content)
         
         response_text = response.choices[0].message.content
         print(f"    LLM Response: {response_text[:150]}...")
+        if not response_text:
+            raise ValueError("LLM response content is None")
         
         result = extract_json_from_response(response_text)
+
+        original_issues = result.get("issues", [])
+
+        if not ingredients and original_issues:
+            # Only remove ingredient-related hallucinations *if* they actually appear
+            filtered_issues = [
+                issue for issue in original_issues
+                if not is_likely_ingredient_issue(issue)
+            ]
+            if filtered_issues:
+                result["issues"] = filtered_issues
+            else:
+                # If everything gets filtered out, restore the originals to be safe
+                result["issues"] = original_issues
+            
+            print(f"    Filtered out {len(original_issues) - len(result['issues'])} issues as likely ingredient hallucinations")
+
+            return result
+        
+
+        
+        if result["issues"]:
+            result["compliant"] = False
+        else:
+            result["compliant"] = True
+
         return result
         
     except Exception as e:
@@ -259,7 +355,7 @@ Be specific and reference actual regulatory requirements when possible.
             "error": str(e)
         }
 
-def evaluate_product_direct(ingredients: List[str]) -> Dict:
+def evaluate_product_direct(ingredients: List[str], claims: List[str] = None) -> Dict:
     """
     Run compliance checks using direct database access.
     """
@@ -287,12 +383,13 @@ def evaluate_product_direct(ingredients: List[str]) -> Dict:
     for law in law_frameworks:
         try:
             result = check_single_law_direct(
-                conn, client, ingredients, 
+                conn, client, ingredients, claims or [],
                 law["category"], law["name"]
             )
             
             if not result.get("compliant", True):
                 issues = result.get("issues", [])
+                print(f"  ⚠️ Issues detected for {law['name']}: {issues}")
                 reason = "; ".join(issues) if issues else "Regulatory violation detected"
                 
                 non_compliant_results.append({
@@ -337,15 +434,18 @@ def main() -> None:
             print("Input must be valid JSON or path to JSON file", file=sys.stderr)
             sys.exit(1)
 
-    if isinstance(payload, list):
-        ingredients = payload
-    elif isinstance(payload, dict) and "ingredients" in payload:
-        ingredients = payload["ingredients"]
+    if isinstance(payload, dict):
+        ingredients = payload.get("ingredients", [])
+        claims = payload.get("claims", [])
+        
+        if not ingredients and not claims:
+            print("Must provide at least 'ingredients' or 'claims' for compliance checking.", file=sys.stderr)
+            sys.exit(1)
     else:
-        print("JSON must be a list or an object with an 'ingredients' field", file=sys.stderr)
+        print("JSON must be a dictionary with optional 'ingredients' and/or 'claims' keys", file=sys.stderr)
         sys.exit(1)
 
-    result = evaluate_product_direct(ingredients)
+    result = evaluate_product_direct(ingredients, claims)
     # print(f"\n FINAL RESULT:")
     print(json.dumps(result))
 

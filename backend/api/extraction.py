@@ -194,7 +194,10 @@ async def analyze_document_comprehensive(
 
             with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as f:
                 ingredients_path = f.name
-                json.dump({"ingredients": ingredient_names}, f)
+                json.dump({
+                    "ingredients": ingredient_names,
+                    "claims": [claim["claim_text"] for claim in results["claims"]]
+                }, f)
 
             try:
                 print("Running check_compliance.py...")
@@ -202,7 +205,8 @@ async def analyze_document_comprehensive(
                     [sys.executable, "backend/check_compliance.py", ingredients_path],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True
+                    text=True,
+                    encoding="utf-8"
                 )
 
                 print("Compliance stdout:")
