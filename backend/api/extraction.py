@@ -1,3 +1,4 @@
+from datetime import datetime
 import re
 import sys
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -143,8 +144,38 @@ async def analyze_document_comprehensive(
     Comprehensive document analysis - extract text, ingredients, claims, and analyze compliance.
     """
     try:
-        # First, extract text
-        text_response = await extract_text_from_file(file, "general")
+        file_bytes = await file.read()
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as tmp_file:
+            tmp_file.write(file_bytes)
+            tmp_file_path = tmp_file.name
+        
+        extracted_text = ""
+        metadata = {
+            "filename": file.filename,
+            "file_size": len(file_bytes),
+            "file_type": file.content_type
+        }
+
+        if file.content_type == "application/pdf":
+            extracted_text = extract_text_from_pdf(tmp_file_path)
+        elif file.content_type.startswith("image/"):
+            extracted_text = extract_text_from_image(tmp_file_path)
+        elif file.content_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            extracted_text = extract_text_from_docx(tmp_file_path)
+        else:
+            with open(tmp_file_path, 'r', encoding='utf-8') as f:
+                extracted_text = f.read()
+
+        os.unlink(tmp_file_path)
+
+        text_response = TextExtractionResponse(
+            extracted_text=extracted_text,
+            document_type="general",
+            metadata=metadata
+        )
+        
+        # text_response = await extract_text_from_file(file, "general")
         
         # Determine document type based on content
         document_type = classify_document_type(text_response.extracted_text)
@@ -230,6 +261,44 @@ async def analyze_document_comprehensive(
                         # Try parsing just the last line
                         compliance_data = json.loads(last_line)
                         results["compliance_analysis"] = compliance_data.get("non_compliant", [])
+
+                        # Accquiring Information for Frontend
+                        severity_counts = {
+                            "critical": 0,
+                            "high": 0,
+                            "medium": 0,
+                            "low": 0,
+                            "resolved": 0
+                        }
+
+                        recent_issues_summary = []
+
+                        for idx, issue in enumerate(results["compliance_analysis"]):
+                            severity = issue.get("severity", "low").lower()
+                            if severity in severity_counts:
+                                severity_counts[severity] += 1
+                            else:
+                                severity_counts["low"] += 1 #(Requires unknown classification -> Added to LOW)
+
+                            if idx < 3:
+                                recent_issues_summary.append({
+                                    "summary": issue.get("reason", "")[:100] + "...",
+                                    "severity": severity,
+                                    "law": issue.get("law", "Unknown Law")
+                                })
+
+                        penalty = (
+                            severity_counts["critical"] * 20 +
+                            severity_counts["high"] * 10 +
+                            severity_counts["medium"] * 5 +
+                            severity_counts["low"] * 2
+                        )
+                        compliance_score = max(0, 100-penalty)
+
+                        results["compliance_score"] = compliance_score
+                        results["issue_counts"] = severity_counts
+                        results["recent_issues"] = recent_issues_summary
+
                         print(f"✅ Parsed {len(results['compliance_analysis'])} compliance results.")
 
                     except (json.JSONDecodeError, IndexError) as e:
@@ -246,6 +315,42 @@ async def analyze_document_comprehensive(
                 results["compliance_analysis"] = {"error": str(e)}
             finally:
                 os.unlink(ingredients_path)
+        
+        from uuid import uuid4
+        from supabase import create_client
+
+        SUPABASE_URL = "https://skflyrfklbfbxlvifyvw.supabase.co"
+        SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrZmx5cmZrbGJmYnhsdmlmeXZ3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NDUxNDQ4MCwiZXhwIjoyMDcwMDkwNDgwfQ.kmHpAr5w_GqF8fHpHMPDqffBjp0QgrJQh3B2dvfyW2I"
+        
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            raise HTTPException(status_code=500, detail="Supabase credentials not configured")
+        
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+        ext = file.filename.split('.')[-1]
+        unique_filename = f"{uuid4()}.{ext}"
+
+        upload_response = supabase.storage.from_('reports').upload(
+            path=unique_filename,
+            file=file_bytes,
+            file_options={"content-type": file.content_type}
+        )
+        print("📤 Upload response:", upload_response)
+
+        file_url = supabase.storage.from_('reports').get_public_url(unique_filename)
+        print(file_url)
+        
+        supabase.table("reports").insert({
+            "filename": file.filename,
+            "file_url": file_url,
+            "created_at": datetime.utcnow().isoformat(),
+            "claims": results.get("claims", []),
+            "ingredients": results.get("ingredients", []),
+            "compliance": results.get("compliance_analysis", []),
+            "compliance_score": results.get("compliance_score", 0),
+            "issue_counts": results.get("issue_counts", {}),
+            "recent_issues": results.get("recent_issues", [])
+        }).execute()
         
         return results
         
@@ -318,8 +423,6 @@ def extract_text_from_image(file_path: str) -> str:
     except Exception as e:
         print(f"❌ Image OCR failed for {file_path}: {e}")
         raise
-
-
 
 def extract_text_from_docx(file_path: str) -> str:
     """Extract text from DOCX file."""

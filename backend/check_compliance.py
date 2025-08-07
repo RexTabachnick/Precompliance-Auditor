@@ -164,11 +164,8 @@ def check_single_law_direct(
     law_category: str,
     law_name: str,
 ) -> Dict:
-    """
-    Check compliance against a single law using direct database queries.
-    """
     print(f"\n Checking {law_name} (category: {law_category})")
-    
+
     claim_queries = []
     if claims:
         claims_text = "; ".join(claims)
@@ -178,46 +175,40 @@ def check_single_law_direct(
             f"{law_category} prohibitied claims",
         ]
 
-    # Create targeted queries
-    if not ingredients:
-        queries = [
+    queries = (
+        [
             f"{law_category} prohibited claims",
             f"{law_category} false advertising",
             f"{law_category} labeling violations",
-            *claim_queries
+            *claim_queries,
         ]
-    else:
-        queries = [
+        if not ingredients
+        else [
             f"{law_category} " + " ".join(ingredients),
             f"{law_category} prohibited substances",
             f"{law_category} banned ingredients",
-            # Test specific dangerous ingredients
-            *[f"{law_category} {ingredient}" for ingredient in ingredients 
-            if ingredient.lower() in ['benzene', 'formaldehyde', 'lead', 'mercury', 'arsenic', 'toluene']],
-            *claim_queries
+            *[f"{law_category} {ingredient}" for ingredient in ingredients if ingredient.lower() in ['benzene', 'formaldehyde', 'lead', 'mercury', 'arsenic', 'toluene']],
+            *claim_queries,
         ]
-    
-    # Collect all relevant chunks
+    )
+
     all_chunks = []
     seen_doc_ids = set()
-    
-    for query in queries[:4]:  # Limit queries to avoid rate limits
+
+    for query in queries[:4]:
         chunks = retrieve_relevant_chunks(conn, client, query, law_category, limit=5)
-        
         for chunk_data in chunks:
-            doc_id = chunk_data[2]  # document_id
+            doc_id = chunk_data[2]
             if doc_id not in seen_doc_ids:
                 all_chunks.append(chunk_data)
                 seen_doc_ids.add(doc_id)
-                
-                if len(all_chunks) >= 8:  # Limit total chunks
+                if len(all_chunks) >= 8:
                     break
-        
         if len(all_chunks) >= 8:
             break
-    
+
     print(f"    Total unique chunks: {len(all_chunks)}")
-    
+
     if not all_chunks:
         print(f"     No relevant chunks found for {law_name}")
         return {
@@ -227,122 +218,170 @@ def check_single_law_direct(
             "fixes": [],
             "confidence": 0.1,
             "compliance_score": 50,
-            "note": "No relevant regulatory content found"
+            "note": "No relevant regulatory content found",
         }
-    
-    # Build context from chunks
-    context_parts = []
-    for i, (text, metadata, doc_id, similarity) in enumerate(all_chunks):
-        context_parts.append(f"--- REGULATORY EXCERPT {i+1} (similarity: {similarity:.3f}) ---\n{text}\n")
-    
-    context = "\n".join(context_parts)
+
+    context = "\n".join(
+        f"--- REGULATORY EXCERPT {i+1} (similarity: {similarity:.3f}) ---\n{text}\n"
+        for i, (text, metadata, doc_id, similarity) in enumerate(all_chunks)
+    )
+
     ingredient_list = ", ".join(ingredients)
     claims_text = "; ".join(claims)
 
     if not ingredients:
         prompt = f"""You are a regulatory compliance expert analyzing **marketing claims** against {law_name}.
 
-    REGULATORY CONTEXT:
-    {context}
+REGULATORY CONTEXT:
+{context}
 
-    CLAIMS TO ANALYZE:
-    {claims_text}
+CLAIMS TO ANALYZE:
+{claims_text}
 
-    INSTRUCTIONS:
-    1. Identify marketing claims that violate {law_name}
-    2. Look for misleading language, unsubstantiated effects, or restricted phrasing
-    3. Flag any health-related claims that imply physiological changes without FDA approval
-    4. Only report actual violations backed by excerpts
-    5. Ignore ingredients entirely
+INSTRUCTIONS:
+1. Identify marketing claims that violate {law_name}
+2. Look for misleading language, unsubstantiated effects, or restricted phrasing
+3. Flag any health-related claims that imply physiological changes without FDA approval
+4. Only report actual violations backed by excerpts
+5. Ignore ingredients entirely
+6. Assign a severity rating ( high, medium, or low) based on regulatory scrutiny
+7. Return a 'severities' array matching the order of the 'issues' array.
 
-    Return ONLY a JSON object:
-    {{
-    "law": "{law_name}",
-    "compliant": true or false,
-    "issues": ["specific issue 1", "specific issue 2"],
-    "fixes": ["specific fix 1", "specific fix 2"],
-    "confidence": 0.0 to 1.0,
-    "compliance_score": 0 to 100
-    }}
-
-    Be specific and reference actual regulatory requirements when possible.
-    """
+High-risk claims include:
+    - Medical/therapeutic claims
+    - Drug-like claims
+    - Unsubstantiated superlatives
+    - Disease prevention claims
+    - Structure/function claims
     
+    Medium-risk claims include:
+    - Efficacy claims without proof
+    - Anti-aging claims
+    - Specific percentage improvements
+    - "Clinical" or "dermatologist" references
+    
+    Low-risk claims include:
+    - Basic function descriptions
+    - Ingredient listings
+    - Texture/sensory descriptions
+
+Return ONLY a JSON object:
+{{
+"law": "{law_name}",
+"compliant": true or false,
+"issues": ["specific issue 1", "specific issue 2"],
+"fixes": ["specific fix 1", "specific fix 2"],
+"confidence": 0.0 to 1.0,
+"compliance_score": 0 to 100,
+"severities": ["critical", "high", "medium", "low"]
+}}"""
     else:
-    # Create prompt for LLM analysis
         prompt = f"""You are a regulatory compliance expert analyzing cosmetic ingredients against {law_name}.
 
-    REGULATORY CONTEXT:
-    {context}
+REGULATORY CONTEXT:
+{context}
 
-    INGREDIENTS TO ANALYZE:
-    {ingredient_list}
+INGREDIENTS TO ANALYZE:
+{ingredient_list}
 
-    INSTRUCTIONS:
-    1. Review each ingredient against the regulatory excerpts above
-    2. Look for explicit prohibitions, restrictions, concentration limits, or labeling requirements  
-    3. Consider chemical synonyms and alternate names
-    4. Only flag violations where there's clear regulatory support
-    5. If no relevant restrictions are found, assume compliance
+INSTRUCTIONS:
+1. Review each ingredient against the regulatory excerpts above
+2. Look for explicit prohibitions, restrictions, concentration limits, or labeling requirements  
+3. Consider chemical synonyms and alternate names
+4. Only flag violations where there's clear regulatory support
+5. If the ingredient is not explicitly mentioned or discussed in the regulatory excerpts, assume it is compliant. Do not infer non-compliance from absence.
+6. Assign a severity rating (critical, high, medium, or low) based on regulatory scrutiny
+7. Return a 'severities' array matching the order of the 'issues' array.
 
-    Return ONLY a JSON object:
-    {{
-    "law": "{law_name}",
-    "compliant": true or false,
-    "issues": ["specific issue 1", "specific issue 2"],
-    "fixes": ["specific fix 1", "specific fix 2"],
-    "confidence": 0.0 to 1.0,
-    "compliance_score": 0 to 100
-    }}
+Severity rating guidelines:
+    - High: Known allergens or restricted substances (fragrance, parfum, limonene, parabens, etc.)
+    - Medium: Ingredients flagged for irritation or controversial (preservatives, some surfactants)
+    - Low: Safe or common ingredients (moisturizers, thickeners, emulsifiers)
 
-    Be specific and reference actual regulatory requirements when possible.
-    """
-    
-    # Get LLM analysis
+
+Return ONLY a JSON object:
+{{
+"law": "{law_name}",
+"compliant": true or false,
+"issues": ["specific issue 1", "specific issue 2"],
+"fixes": ["specific fix 1", "specific fix 2"],
+"confidence": 0.0 to 1.0,
+"compliance_score": 0 to 100,
+"severities": ["critical", "high", "medium", "low"]
+}}"""
+
     try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
-            max_tokens=1000
+            max_tokens=1000,
         )
 
-        print("\nFull LLM response text:\n", response.choices[0].message.content)
-        
         response_text = response.choices[0].message.content
-        print(f"    LLM Response: {response_text[:150]}...")
+        print("\nFull LLM response text:\n", response_text)
         if not response_text:
             raise ValueError("LLM response content is None")
-        
+
         result = extract_json_from_response(response_text)
 
+        # ─── Filter hallucinated ingredient issues before building issue dicts ───
         original_issues = result.get("issues", [])
+        severities = result.get("severities", ["low"] * len(original_issues))
 
         if not ingredients and original_issues:
-            # Only remove ingredient-related hallucinations *if* they actually appear
-            filtered_issues = [
-                issue for issue in original_issues
-                if not is_likely_ingredient_issue(issue)
-            ]
+            filtered_issues = []
+            filtered_severities = []
+            for i, issue in enumerate(original_issues):
+                if not is_likely_ingredient_issue(issue):
+                    filtered_issues.append(issue)
+                    filtered_severities.append(severities[i])
+
             if filtered_issues:
                 result["issues"] = filtered_issues
+                result["severities"] = filtered_severities
             else:
-                # If everything gets filtered out, restore the originals to be safe
                 result["issues"] = original_issues
-            
+                result["severities"] = severities
+
             print(f"    Filtered out {len(original_issues) - len(result['issues'])} issues as likely ingredient hallucinations")
 
-            return result
-        
+        result["compliant"] = len(result["issues"]) == 0
+        severities = result.get("severities", ["low"] * len(result["issues"]))
 
-        
-        if result["issues"]:
-            result["compliant"] = False
-        else:
-            result["compliant"] = True
+        issue_details = []
+        for i, issue in enumerate(result["issues"]):
+            severity = severities[i] if i < len(severities) else "low"
 
-        return result
-        
+            #Auto downgrade severity for vague or soft marketing (lessening LLM aggresiveness with default phrases)
+            if(
+                "dermatologist recommended" in issue.lower()
+                or "clinically tested" in issue.lower()
+                or "gentle formula" in issue.lower()
+            ):
+                if severity == "high":
+                    severity == "critical"
+
+            issue_details.append({
+                "law": law_name,
+                "reason": issue,
+                "confidence": result.get("confidence", 0.0),
+                "severity": severity
+            })
+
+        print(f"✅ Returning structured issues for {law_name}:")
+        for i in issue_details:
+            print(f" - {i}")
+
+        return {
+            "law": law_name,
+            "compliant": result["compliant"],
+            "confidence": result.get("confidence", 0.0),
+            "compliance_score": result.get("compliance_score", 50),
+            "issues": issue_details,
+            "fixes": result.get("fixes", []),
+        }
+
     except Exception as e:
         print(f"    LLM analysis failed: {e}")
         return {
@@ -354,6 +393,7 @@ def check_single_law_direct(
             "compliance_score": 0,
             "error": str(e)
         }
+
 
 def evaluate_product_direct(ingredients: List[str], claims: List[str] = None) -> Dict:
     """
@@ -390,14 +430,24 @@ def evaluate_product_direct(ingredients: List[str], claims: List[str] = None) ->
             if not result.get("compliant", True):
                 issues = result.get("issues", [])
                 print(f"  ⚠️ Issues detected for {law['name']}: {issues}")
-                reason = "; ".join(issues) if issues else "Regulatory violation detected"
-                
-                non_compliant_results.append({
-                    "law": law["name"],
-                    "reason": reason,
-                    "confidence": result.get("confidence", 0.0)
-                })
-                
+
+                for issue in issues:
+                    if isinstance(issue, dict):
+                        non_compliant_results.append({
+                            "law": issue.get("law", law["name"]),
+                            "reason": issue.get("reason", "Regulatory violation"),
+                            "confidence": issue.get("confidence", 0.0),
+                            "severity": issue.get("severity", "low")
+                        })
+                    else:
+                        # fallback for string-based issues (older or malformed output)
+                        non_compliant_results.append({
+                            "law": law["name"],
+                            "reason": issue,
+                            "confidence": result.get("confidence", 0.0),
+                            "severity": "low"  # or guess default
+                        })
+                            
         except Exception as e:
             print(f" Error checking {law['name']}: {e}")
             non_compliant_results.append({

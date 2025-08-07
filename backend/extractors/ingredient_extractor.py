@@ -11,6 +11,7 @@ class ExtractedIngredient(BaseModel):
     function: Optional[str] = None
     cas_number: Optional[str] = None
     is_allergen: bool = False
+    severity: str = "low"
 
 class IngredientExtractor:
     def __init__(self, openai_api_key: str):
@@ -22,7 +23,7 @@ class IngredientExtractor:
         
         prompt = f"""
         Extract all cosmetic ingredients from this document text.
-        
+
         For each ingredient, identify:
         - ingredient_name: Common name of the ingredient
         - inci_name: INCI (International Nomenclature of Cosmetic Ingredients) name if available
@@ -30,11 +31,15 @@ class IngredientExtractor:
         - function: What the ingredient does (preservative, colorant, emulsifier, etc.)
         - cas_number: CAS registry number if available
         - is_allergen: true if it's a known allergen (like fragrance, essential oils, etc.)
-        
-        Common allergens to flag: Fragrance, Parfum, essential oils, Limonene, Linalool, Citronellol, Geraniol, Eugenol, Cinnamal, Benzyl alcohol, Benzyl benzoate, Benzyl salicylate, Citral, Coumarin, Farnesol, Hexyl cinnamal, Hydroxycitronellal, Isoeugenol, Anise alcohol, Benzyl cinnamate, Hydroxymethylpentylcyclohexenecarboxaldehyde, Methylheptine carbonate, Phenylacetaldehyde, Piperonal, Propanal, Vanillin
-        
+        - severity: Risk level (low, medium, high) based on regulatory or allergen concern
+
+        Severity rating guidelines:
+        - High: Known allergens or restricted substances (fragrance, parfum, limonene, parabens, etc.)
+        - Medium: Ingredients flagged for irritation or controversial (preservatives, some surfactants)
+        - Low: Safe or common ingredients (moisturizers, thickeners, emulsifiers)
+
         Return ONLY a JSON array of ingredients, no other text.
-        
+
         Document text:
         {document_text}
         """

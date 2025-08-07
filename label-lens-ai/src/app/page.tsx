@@ -1,6 +1,7 @@
 'use client';
 
 import React from "react";
+import { useEffect, useState } from "react";
 import Layout from "@/app/components/Layout";
 import {Button} from "@/app/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle} from "@/app/components/ui/card";
@@ -8,6 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/app/components/ui/alert";
 import { Badge } from "@/app/components/ui/badge";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 import {
   WarningCircleIcon,
   SecurityCameraIcon,
@@ -19,46 +21,99 @@ import {
   FileLockIcon,
   FileTextIcon,
 } from "@phosphor-icons/react";
+import { ReceiptRussianRuble } from "lucide-react";
 
 const Home =() => {
 
   const pathname = usePathname();
    
-  //Mock Data
-  const complianceScore = 72;
-  const totalIssues = 8;
-  const criticalIssues = 2;
-  const highIssues = 2;
-  const mediumIssues = 2;
-  const lowIssues = 2;
-  const resolvedIssues = 2;
+  //Changed to Real Data
+  const [complianceScore, setComplianceScore] = useState(0);
+  const [issueCounts, setIssueCounts] = useState({
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    resolved: 0,
+  });
+  const [recentIssues, setRecentIssues] = useState<any[]>([]);
+  const [issueName, setIssueName] = useState<any[]>([]);
+  const [scoreChange, setScoreChange] = useState(0);
 
-  const recentIssues = [
-    {
-      id: '1',
-      title: 'Missing FDA Required Disclaimer',
-      severity: 'high',
-      category: 'FDA Compliance',
-      date: '2024-01-15',
-      product: 'Vitamin C Serum'
-    },
-    {
-      id: '2',
-      title: 'Unsubstantiated Marketing Claims',
-      severity: 'medium',
-      category: 'FTC Compliance',
-      date: '2024-01-14',
-      product: 'Energy Bar'
-    },
-    {
-      id: '3',
-      title: 'Ingredient List Format Issue',
-      severity: 'low',
-      category: 'Labeling Standards',
-      date: '2024-01-12',
-      product: 'Organic Shampoo'
-    }
-  ];
+
+  useEffect(() => {
+    const fetchLatestReport = async () => {
+      const { data, error } = await supabase
+        .from("reports")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .select("*")
+        .order("created_at", { ascending: false });
+
+
+      if (error) {
+        console.error("Report Fetch Failed:", error);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        let totalCounts = {
+          critical: 0,
+          high: 0,
+          medium: 0,
+          low: 0,
+          resolved: 0,
+        };
+
+        let totalScore = 0;
+        let totalReports = 0;
+        const recent = data[0];
+
+        data.forEach((report) => {
+          const counts = report.issue_counts || {};
+          totalCounts.critical += counts.critical || 0;
+          totalCounts.high += counts.high || 0;
+          totalCounts.medium += counts.medium || 0;
+          totalCounts.low += counts.low || 0;
+          totalCounts.resolved += counts.resolved || 0;
+
+          if (report.compliance_score !== undefined) {
+            totalScore += report.compliance_score;
+            totalReports += 1;
+          }
+        });
+
+        const avgScore = totalReports > 0 ? Math.round(totalScore / totalReports) : 100;
+
+        setComplianceScore(avgScore);
+        setIssueCounts(totalCounts);
+        setRecentIssues(recent.recent_issues || []);
+        setIssueName(recent.filename || "");
+
+        if (data.length > 1) {
+          const delta = (recent.compliance_score || 0) - (data[1].compliance_score || 0);
+          setScoreChange(delta);
+        } else {
+          setScoreChange(0);
+        }
+      } else {
+        // No reports — assume full score, empty issues
+        setComplianceScore(100);
+        setIssueCounts({
+          critical: 0,
+          high: 0,
+          medium: 0,
+          low: 0,
+          resolved: 0,
+        });
+        setRecentIssues([]);
+        setScoreChange(0);
+      }
+    };
+
+    fetchLatestReport();
+  }, []);
+
 
   const getScoreColor = (score:number) => {
     if(score === 100) {
@@ -108,17 +163,17 @@ const Home =() => {
         </div>
 
         <Card className={`${getBgColor(complianceScore)} border-2`}>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center space-x-2">
-              <SecurityCameraIcon className="w-6 h-6 text-teal-600"/>
-              <span>Overall Score</span>
+          <CardHeader className="pb-3 flex flex-col items-center justify-center text-center">
+            <SecurityCameraIcon className="w-10 h-10 text-teal-600 mb-2" />
+            <CardTitle className="text-2xl font-bold text-slate-800">
+              Overall Score
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex-items-center space-x-6">
+            <div className="flex flex-col items-center justify-center space-y-4 py-4">
               <div className="relative">
-                <div className="w-24 h-24 rounded-full border-8 border-slate-600 flex items-center justify-center">
-                  <span className={`${getScoreColor(complianceScore)} text-3xl font-bold`}>{complianceScore}</span>
+                <div className="w-32 h-32 rounded-full border-8 border-slate-600 flex items-center justify-center">
+                  <span className={`${getScoreColor(complianceScore)} text-5xl font-extrabold`}>{complianceScore}</span>
                 </div>
                 <div 
                   className={`absolute inset-0 rounded-full border-slate-200 flex items-center justify-center ${
@@ -126,49 +181,32 @@ const Home =() => {
                     complianceScore >=60 ? 'border-t-orange-500 border-r-orange-500' :
                     'border-t-red-500 border-r-red-500'
                   }`}
-                  style = {{
+                  style={{
                     transform: `rotate(${complianceScore * 3.6}deg)`,
-                    transition: 'transform 0.5s ease-in-out'
+                    transition: 'transform 0.5s ease-in-out',
                   }}
                 />
               </div>
-              <div className="flex-1">
-                <p className="text-slate-600 mb-2">
-                  {
-                    complianceScore >= 100 ? 'Compliant' :
-                    complianceScore >= 60 ? 'Partially Compliant' :
-                    'Non-Compliant'
-                  }
-                </p>
-                <div className="flex-items-center space-x-4 text-sm text-slate-600">
-                  <span className="flex items-center space">
-                    +5 points this week
-                  </span>
-                  <span className="flex-items-center space">
-                    Last Update: Today
-                  </span>
-                </div>
+              <p className="text-lg text-slate-600">
+                {
+                  complianceScore >= 100 ? 'Compliant' :
+                  complianceScore >= 60 ? 'Partially Compliant' :
+                  'Non-Compliant'
+                }
+              </p>
+              <div className="text-sm text-slate-500">
+                <span className={`${scoreChange >= 0 ? "text-green-600" : "text-red-600"} mr-2`}>
+                  {scoreChange >= 0 ? `+${scoreChange}` : `${scoreChange}`} points since last check
+                </span>
+                <span>
+                  Last Update: {new Date().toLocaleDateString()}
+                </span>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <div className="grid md:grid-cols-2 gap-4 lg:grid-cols-5 gaps-6">
-          <Card className="bg-black border-white">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-md font-medium text-white flex-items-center">
-                <XIcon className="w-7 h-7 mr-2"/>
-                Critical Issues 
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-white">
-                {criticalIssues}
-              </div>
-              <p className="text-xs text-white">Require immediate action</p>
-            </CardContent>
-          </Card>
-
+        <div className="grid md:grid-cols-2 gap-4 lg:grid-cols-4 gaps-5">
           <Card className="bg-red-700 border-black">
             <CardHeader className="pb-2">
               <CardTitle className="text-md font-medium text-white flex-items-center">
@@ -178,7 +216,7 @@ const Home =() => {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-white">
-                {highIssues}
+                {issueCounts.high}
               </div>
             </CardContent>
           </Card>
@@ -192,7 +230,7 @@ const Home =() => {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-white">
-                {mediumIssues}
+                {issueCounts.medium}
               </div>
             </CardContent>
           </Card>
@@ -206,7 +244,7 @@ const Home =() => {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-white">
-                {lowIssues}
+                {issueCounts.low}
               </div>
             </CardContent>
           </Card>
@@ -220,27 +258,18 @@ const Home =() => {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-white">
-                {criticalIssues}
+                {issueCounts.resolved}
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {(highIssues + criticalIssues) > 0 && (
-          <Alert className="border-red-800 bg-red-50 flex items-center justify-between p-4">
-            <div className="flex items-center gap-3">
-              <WarningIcon className="w-5 h-5 text-red-800 shrink-0" />
-              <AlertDescription className="text-lg text-red-800">
-                You have {highIssues + criticalIssues} urgent compliance issues that are ready for review.
-              </AlertDescription>
-            </div>
-            <Button
-              className="hover:bg-red-500 hover:text-white"
-              variant="destructive"
-              size="sm"
-            >
-              Review Issues
-            </Button>
+        {(issueCounts.high + issueCounts.critical) > 0 && (
+          <Alert className="border-red-800 bg-red-50 p-4 flex flex-col items-center text-center">
+            <WarningIcon className="w-5 h-5 text-red-800 mb-2" />
+            <AlertDescription className="text-lg text-red-800">
+              You have {issueCounts.high + issueCounts.critical} urgent compliance issues that are ready for review.
+            </AlertDescription>
           </Alert>
         )}
 
@@ -251,36 +280,41 @@ const Home =() => {
                 <FileTextIcon className="w-7 h-7 text-slate-800"/>
                 Recent Issues
               </div>
-              <Button variant={"outline"} size={"sm"} onClick={() => {}}>
-              View All
-              </Button>
+              <Link href="/reports">
+                <Button variant="outline" size="sm" >View All</Button>
+              </Link>
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {recentIssues.map((issue) =>  (
-                <div key={issue.id} className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-3 mb-2">
-                      <h4 className="font-medium text-slate-800">{issue.title}</h4>
-                      <Badge className={`text-xs ${getSeverityColor(issue.severity)}`}>
-                        {issue.severity.toUpperCase()}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center space-x-4 text-sm text-slate-600">
-                      <span>{issue.category}</span>
-                      <span>.</span>
-                      <span>{issue.product}</span>
-                      <span>.</span>
-                      <span>{issue.date}</span>
+          <CardContent className="max-h-80 overflow-y-auto space-y-4">
+            {recentIssues.length === 0 ? (
+              <div className="text-center text-slate-500 py-8 text-sm">
+                🎉 No recent compliance issues found!
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {recentIssues.map((issue: any, index: number) => (
+                  <div key={index} className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-3 mb-2">
+                        <h4 className="font-medium text-slate-800 break-words whitespace-normal text-sm">
+                          {issueName || "No description provided"}
+                        </h4>
+                        <Badge className={`text-xs ${getSeverityColor(issue.severity)}`}>
+                          {issue.severity.toUpperCase()}
+                        </Badge>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600 mt-1">
+                        <span>{issue.law || "Unknown Law"}</span>
+                        <span>&middot;</span>
+                        <span>{issue.severity || "Unknown Severity"}</span>
+                        <span>&middot;</span>
+                        <span>{new Date().toLocaleDateString()}</span>
+                      </div>
                     </div>
                   </div>
-                  <Button variant={"outline"} size={"sm"} onClick={() => {}}>
-                    View
-                  </Button>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
