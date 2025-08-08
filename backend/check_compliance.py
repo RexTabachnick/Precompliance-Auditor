@@ -63,7 +63,6 @@ def retrieve_relevant_chunks(
     """
     Retrieve relevant chunks using direct database query with cosine similarity.
     """
-    print(f"    Query: '{query}' (category: {category})")
     
     try:
         # Create query embedding
@@ -101,14 +100,13 @@ def retrieve_relevant_chunks(
             cur.execute(base_query, params)
             results = cur.fetchall()
             
-            print(f"    Found {len(results)} chunks")
+            
             
             # Show top result if any
             if results:
                 top_result = results[0]
                 text_preview = top_result[0][:100].replace('\n', ' ')
                 similarity = top_result[3]
-                print(f"    Best match (similarity: {similarity:.3f}): {text_preview}...")
             
             return results
             
@@ -164,7 +162,6 @@ def check_single_law_direct(
     law_category: str,
     law_name: str,
 ) -> Dict:
-    print(f"\n Checking {law_name} (category: {law_category})")
 
     claim_queries = []
     if claims:
@@ -206,8 +203,6 @@ def check_single_law_direct(
                     break
         if len(all_chunks) >= 8:
             break
-
-    print(f"    Total unique chunks: {len(all_chunks)}")
 
     if not all_chunks:
         print(f"     No relevant chunks found for {law_name}")
@@ -319,7 +314,6 @@ Return ONLY a JSON object:
         )
 
         response_text = response.choices[0].message.content
-        print("\nFull LLM response text:\n", response_text)
         if not response_text:
             raise ValueError("LLM response content is None")
 
@@ -344,7 +338,6 @@ Return ONLY a JSON object:
                 result["issues"] = original_issues
                 result["severities"] = severities
 
-            print(f"    Filtered out {len(original_issues) - len(result['issues'])} issues as likely ingredient hallucinations")
 
         result["compliant"] = len(result["issues"]) == 0
         severities = result.get("severities", ["low"] * len(result["issues"]))
@@ -369,9 +362,7 @@ Return ONLY a JSON object:
                 "severity": severity
             })
 
-        print(f"✅ Returning structured issues for {law_name}:")
-        for i in issue_details:
-            print(f" - {i}")
+            
 
         return {
             "law": law_name,
