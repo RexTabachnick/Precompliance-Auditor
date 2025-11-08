@@ -1,19 +1,19 @@
 <<<<<<< HEAD
-# 🪶 goosePool — AI-Powered Regulatory Compliance Assistant
+# AI-Powered Regulatory Compliance Assistant
 
 **Developed by:** Sahit Reddy, Rex Tabachnick, and Avi Raj  
 **Tech Stack:** FastAPI • PostgreSQL + pgvector • LlamaIndex • OpenAI GPT-4o • Streamlit • Docker  
 
 ---
 
-## 📘 Overview
+## Overview
 **goosePool** is an AI-driven compliance intelligence system designed to automatically evaluate product data against complex legal frameworks such as FDA cosmetic regulations, Prop 65, and MoCRA.  
 
 The platform enables regulatory, R&D, and product teams to quickly assess whether product formulations, ingredient lists, and claims meet regional compliance standards — turning what used to take hours of manual legal cross-checking into an automated, explainable workflow.
 
 ---
 
-## ⚙️ Core Architecture
+## Core Architecture
 
 ### **Backend (FastAPI + PostgreSQL + pgvector)**
 - Ingests product specification files and regulatory PDFs.  
@@ -32,7 +32,7 @@ The platform enables regulatory, R&D, and product teams to quickly assess whethe
 
 ---
 
-## 🧠 My Role (Rex Tabachnick)
+## My Role (Rex Tabachnick)
 I co-developed the **backend retrieval system** and **data ingestion pipeline**, focusing on:
 
 - Implementing the FastAPI backend for structured RAG queries.  
@@ -43,7 +43,7 @@ I co-developed the **backend retrieval system** and **data ingestion pipeline**,
 
 ---
 
-## 🧩 Example Flow
+## Example Flow
 1. User uploads a product data file.  
 2. System parses product attributes and matches ingredients/claims to relevant laws.  
 3. LlamaIndex retrieves and ranks relevant text passages.  
@@ -52,13 +52,13 @@ I co-developed the **backend retrieval system** and **data ingestion pipeline**,
 
 ---
 
-## 🚀 Project Context
+## Project Context
 Built as part of the **OpenAI x UW–Madison SAIL Program**, this project demonstrates practical RAG deployment for real-world compliance automation.  
 Our focus was scalability, transparency, and the ability to integrate with enterprise CRMs or R&D systems via API.
 
 ---
 
-## 📂 Repository Structure (Demo Version)
+## Repository Structure (Demo Version)
 =======
 # Precompliance-Auditor
 This project loads California cosmetic law/regulation data into a RAG vector database, then semantically retrieves it based on an interactive localhosted frontend UI to grade cosmetic brand ingredients and marketing based on compliance.
