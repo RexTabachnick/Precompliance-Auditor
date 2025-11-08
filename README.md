@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 🪶 goosePool — AI-Powered Regulatory Compliance Assistant
 
 **Developed by:** Sahit Reddy, Rex Tabachnick, and Avi Raj  
@@ -58,3 +59,7 @@ Our focus was scalability, transparency, and the ability to integrate with enter
 ---
 
 ## 📂 Repository Structure (Demo Version)
+=======
+# Precompliance-Auditor
+This project loads California cosmetic law/regulation data into a RAG vector database, then semantically retrieves it based on an interactive localhosted frontend UI to grade cosmetic brand ingredients and marketing based on compliance.
+>>>>>>> d07cc3d72f35f8077dce347b0a2f00549b8cfff6
